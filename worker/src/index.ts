@@ -254,41 +254,88 @@ const Worker = {
 
         const wasSlowAt = state.data.slowMonitors[monitor.id]
         const isSlow = status.ping > monitor.latencyThreshold
+        const gracePeriod = workerConfig.notification?.gracePeriod
 
         if (isSlow && !wasSlowAt) {
-          // Transition from fast to slow
+          // Transition from fast to slow - record timestamp
           state.data.slowMonitors[monitor.id] = currentTimeSecond
           statusChanged = true
 
           console.log(
-            `[${monitor.name}] Latency ${status.ping}ms exceeds threshold ${monitor.latencyThreshold}ms, sending slow notification`
+            `[${monitor.name}] Latency ${status.ping}ms exceeds threshold ${monitor.latencyThreshold}ms`
           )
 
           try {
-            await formatAndNotifyLatency(
-              monitor,
-              true,
-              status.ping,
-              monitor.latencyThreshold,
-              currentTimeSecond,
-              currentTimeSecond
-            )
+            if (gracePeriod === undefined) {
+              // No grace period, send immediately
+              console.log(`No grace period set, sending slow notification for ${monitor.name}`)
+              await formatAndNotifyLatency(
+                monitor,
+                true,
+                status.ping,
+                monitor.latencyThreshold,
+                currentTimeSecond,
+                currentTimeSecond
+              )
 
-            console.log('Calling config onLatencyThreshold callback...')
-            await workerConfig.callbacks?.onLatencyThreshold?.(
-              env,
-              monitor,
-              true,
-              status.ping,
-              monitor.latencyThreshold,
-              currentTimeSecond,
-              currentTimeSecond,
-              checkLocation,
-              getMonitorGroup(monitor.id)
-            )
+              console.log('Calling config onLatencyThreshold callback...')
+              await workerConfig.callbacks?.onLatencyThreshold?.(
+                env,
+                monitor,
+                true,
+                status.ping,
+                monitor.latencyThreshold,
+                currentTimeSecond,
+                currentTimeSecond,
+                checkLocation,
+                getMonitorGroup(monitor.id)
+              )
+            } else {
+              console.log(
+                `Grace period (${gracePeriod}m) not yet met, skipping slow notification for ${monitor.name}`
+              )
+            }
           } catch (e) {
             console.log('Error calling latency threshold callback: ')
             console.log(e)
+          }
+        } else if (isSlow && wasSlowAt) {
+          // Still slow - check if grace period just met (within 60s window)
+          if (
+            gracePeriod !== undefined &&
+            currentTimeSecond - wasSlowAt >= gracePeriod * 60 - 30 &&
+            currentTimeSecond - wasSlowAt < gracePeriod * 60 + 30
+          ) {
+            console.log(
+              `[${monitor.name}] Grace period (${gracePeriod}m) met, sending slow notification`
+            )
+
+            try {
+              await formatAndNotifyLatency(
+                monitor,
+                true,
+                status.ping,
+                monitor.latencyThreshold,
+                wasSlowAt,
+                currentTimeSecond
+              )
+
+              console.log('Calling config onLatencyThreshold callback...')
+              await workerConfig.callbacks?.onLatencyThreshold?.(
+                env,
+                monitor,
+                true,
+                status.ping,
+                monitor.latencyThreshold,
+                wasSlowAt,
+                currentTimeSecond,
+                checkLocation,
+                getMonitorGroup(monitor.id)
+              )
+            } catch (e) {
+              console.log('Error calling latency threshold callback: ')
+              console.log(e)
+            }
           }
         } else if (!isSlow && wasSlowAt) {
           // Transition from slow to fast
@@ -296,31 +343,43 @@ const Worker = {
           statusChanged = true
 
           console.log(
-            `[${monitor.name}] Latency ${status.ping}ms is back below threshold ${monitor.latencyThreshold}ms, sending fast notification`
+            `[${monitor.name}] Latency ${status.ping}ms is back below threshold ${monitor.latencyThreshold}ms`
           )
 
           try {
-            await formatAndNotifyLatency(
-              monitor,
-              false,
-              status.ping,
-              monitor.latencyThreshold,
-              wasSlowAt,
-              currentTimeSecond
-            )
+            if (
+              // grace period not set OR ...
+              gracePeriod === undefined ||
+              // only send fast notification if we would have sent a slow notification (within 30s drift)
+              currentTimeSecond - wasSlowAt >= (gracePeriod + 1) * 60 - 30
+            ) {
+              console.log(`Sending fast notification for ${monitor.name}`)
+              await formatAndNotifyLatency(
+                monitor,
+                false,
+                status.ping,
+                monitor.latencyThreshold,
+                wasSlowAt,
+                currentTimeSecond
+              )
 
-            console.log('Calling config onLatencyThreshold callback...')
-            await workerConfig.callbacks?.onLatencyThreshold?.(
-              env,
-              monitor,
-              false,
-              status.ping,
-              monitor.latencyThreshold,
-              wasSlowAt,
-              currentTimeSecond,
-              checkLocation,
-              getMonitorGroup(monitor.id)
-            )
+              console.log('Calling config onLatencyThreshold callback...')
+              await workerConfig.callbacks?.onLatencyThreshold?.(
+                env,
+                monitor,
+                false,
+                status.ping,
+                monitor.latencyThreshold,
+                wasSlowAt,
+                currentTimeSecond,
+                checkLocation,
+                getMonitorGroup(monitor.id)
+              )
+            } else {
+              console.log(
+                `Grace period (${gracePeriod}m) not met (was slow for ${currentTimeSecond - wasSlowAt}s), skipping fast notification for ${monitor.name}`
+              )
+            }
           } catch (e) {
             console.log('Error calling latency threshold callback: ')
             console.log(e)
