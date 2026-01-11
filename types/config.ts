@@ -45,8 +45,9 @@ export type MonitorTarget = {
   responseForbiddenKeyword?: string
   checkProxy?: string
   checkProxyFallback?: boolean
-  // [OPTIONAL] latency threshold in milliseconds - if response time exceeds this, a "slow" notification is sent
-  // when response time drops back below threshold, a "fast" (recovered) notification is sent
+  // [OPTIONAL] latency threshold in milliseconds - if response time exceeds this (strictly greater than),
+  // a "slow" notification is sent. When response time drops back below threshold, a "fast" (recovered)
+  // notification is sent. A response time exactly equal to the threshold is NOT considered slow.
   latencyThreshold?: number
 }
 
@@ -167,5 +168,5 @@ export type MonitorStateCompacted = {
 
   // tracks which monitors are currently in "slow" state (latency exceeds threshold)
   // used to trigger slow/fast notifications on threshold crossings
-  slowMonitors?: Record<string, number> // monitor id -> timestamp when it became slow (null/undefined = not slow)
+  slowMonitors?: Record<string, number> // monitor id -> timestamp when it became slow (missing entry = not slow)
 }

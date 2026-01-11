@@ -85,14 +85,27 @@ function formatLatencyThresholdNotification(
     timeZone: timeZone,
   })
 
-  const slowDuration = Math.round((timeNow - timeSlowStart) / 60)
   const timeNowFormatted = dateFormatter.format(new Date(timeNow * 1000))
 
   if (isSlow) {
     return `🐢 ${monitor.name} is slow! \nResponse time ${latency}ms exceeds threshold of ${threshold}ms at ${timeNowFormatted}.`
   } else {
+    const slowDuration = Math.round((timeNow - timeSlowStart) / 60)
     return `⚡ ${monitor.name} is fast again! \nResponse time ${latency}ms is back below threshold of ${threshold}ms after being slow for ${slowDuration} minutes.`
   }
+}
+
+function isMonitorInMaintenance(monitorId: string, timeNow: number): boolean {
+  const maintenanceList = maintenances
+    .filter(
+      (m) =>
+        new Date(timeNow * 1000) >= new Date(m.start) &&
+        (!m.end || new Date(timeNow * 1000) <= new Date(m.end))
+    )
+    .map((e) => e.monitors || [])
+    .flat()
+
+  return maintenanceList.includes(monitorId)
 }
 
 function templateWebhookPlayload(payload: any, message: string) {
@@ -190,16 +203,7 @@ const formatAndNotify = async (
   }
 
   // Skip notification if monitor is in maintenance
-  const maintenanceList = maintenances
-    .filter(
-      (m) =>
-        new Date(timeNow * 1000) >= new Date(m.start) &&
-        (!m.end || new Date(timeNow * 1000) <= new Date(m.end))
-    )
-    .map((e) => e.monitors || [])
-    .flat()
-
-  if (maintenanceList.includes(monitor.id)) {
+  if (isMonitorInMaintenance(monitor.id, timeNow)) {
     console.log(`Skipping notification for ${monitor.name} (in maintenance)`)
     return
   }
@@ -236,16 +240,7 @@ const formatAndNotifyLatency = async (
   }
 
   // Skip notification if monitor is in maintenance
-  const maintenanceList = maintenances
-    .filter(
-      (m) =>
-        new Date(timeNow * 1000) >= new Date(m.start) &&
-        (!m.end || new Date(timeNow * 1000) <= new Date(m.end))
-    )
-    .map((e) => e.monitors || [])
-    .flat()
-
-  if (maintenanceList.includes(monitor.id)) {
+  if (isMonitorInMaintenance(monitor.id, timeNow)) {
     console.log(`Skipping latency notification for ${monitor.name} (in maintenance)`)
     return
   }
