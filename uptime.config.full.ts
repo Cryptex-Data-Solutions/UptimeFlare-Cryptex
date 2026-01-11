@@ -137,22 +137,34 @@ const workerConfig: WorkerConfig = {
       isUp: boolean,
       timeIncidentStart: number,
       timeNow: number,
-      reason: string
+      reason: string,
+      ping: number,
+      checkLocation: string,
+      group: string | undefined
     ) => {
       // This callback will be called when there's a status change for any monitor
       // Write any TypeScript code here
       // This will not follow the grace period settings and will be called immediately when the status changes
       // You need to handle the grace period manually if you want to implement it
+      // ping: response time in ms
+      // checkLocation: Cloudflare edge location that ran the check (e.g., 'SIN', 'LAX')
+      // group: the group name from pageConfig.group if the monitor is in a group, undefined otherwise
     },
     onIncident: async (
       env: any,
       monitor: any,
       timeIncidentStart: number,
       timeNow: number,
-      reason: string
+      reason: string,
+      ping: number,
+      checkLocation: string,
+      group: string | undefined
     ) => {
-      // This callback will be called EVERY 1 MINTUE if there's an on-going incident for any monitor
+      // This callback will be called EVERY 1 MINUTE if there's an on-going incident for any monitor
       // Write any TypeScript code here
+      // ping: response time in ms
+      // checkLocation: Cloudflare edge location that ran the check
+      // group: the group name from pageConfig.group if the monitor is in a group
     },
     onLatencyThreshold: async (
       env: any,
@@ -161,7 +173,9 @@ const workerConfig: WorkerConfig = {
       latency: number,
       threshold: number,
       timeSlowStart: number,
-      timeNow: number
+      timeNow: number,
+      checkLocation: string,
+      group: string | undefined
     ) => {
       // This callback will be called when latency crosses the threshold (either slow or recovered)
       // isSlow: true when latency exceeds threshold, false when it recovers
@@ -169,6 +183,8 @@ const workerConfig: WorkerConfig = {
       // threshold: the configured latencyThreshold value
       // timeSlowStart: when the slow period started (same as timeNow if just became slow)
       // timeNow: current timestamp
+      // checkLocation: Cloudflare edge location that ran the check
+      // group: the group name from pageConfig.group if the monitor is in a group
     },
   },
 }

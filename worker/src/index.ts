@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { MonitorTarget } from '../../types/config'
 import { workerConfig } from '../../uptime.config'
 import { getStatus, getStatusWithGlobalPing } from './monitor'
-import { formatAndNotify, formatAndNotifyLatency, getWorkerLocation } from './util'
+import { formatAndNotify, formatAndNotifyLatency, getMonitorGroup, getWorkerLocation } from './util'
 import { CompactedMonitorStateWrapper, getFromStore, setToStore } from './store'
 
 export interface Env {
@@ -128,7 +128,10 @@ const Worker = {
               true,
               lastIncident.start[0],
               currentTimeSecond,
-              'OK'
+              'OK',
+              status.ping,
+              checkLocation,
+              getMonitorGroup(monitor.id)
             )
           } catch (e) {
             console.log('Error calling callback: ')
@@ -213,7 +216,10 @@ const Worker = {
               false,
               currentIncident.start[0],
               currentTimeSecond,
-              status.err
+              status.err,
+              status.ping,
+              checkLocation,
+              getMonitorGroup(monitor.id)
             )
           }
         } catch (e) {
@@ -228,7 +234,10 @@ const Worker = {
             monitor,
             currentIncident.start[0],
             currentTimeSecond,
-            status.err
+            status.err,
+            status.ping,
+            checkLocation,
+            getMonitorGroup(monitor.id)
           )
         } catch (e) {
           console.log('Error calling callback: ')
@@ -273,7 +282,9 @@ const Worker = {
               status.ping,
               monitor.latencyThreshold,
               currentTimeSecond,
-              currentTimeSecond
+              currentTimeSecond,
+              checkLocation,
+              getMonitorGroup(monitor.id)
             )
           } catch (e) {
             console.log('Error calling latency threshold callback: ')
@@ -306,7 +317,9 @@ const Worker = {
               status.ping,
               monitor.latencyThreshold,
               wasSlowAt,
-              currentTimeSecond
+              currentTimeSecond,
+              checkLocation,
+              getMonitorGroup(monitor.id)
             )
           } catch (e) {
             console.log('Error calling latency threshold callback: ')

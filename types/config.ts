@@ -85,14 +85,20 @@ export type Callbacks<TEnv = Env> = {
     isUp: boolean,
     timeIncidentStart: number,
     timeNow: number,
-    reason: string
+    reason: string,
+    ping: number,
+    checkLocation: string,
+    group: string | undefined
   ) => Promise<any> | any
   onIncident?: (
     env: TEnv,
     monitor: MonitorTarget,
     timeIncidentStart: number,
     timeNow: number,
-    reason: string
+    reason: string,
+    ping: number,
+    checkLocation: string,
+    group: string | undefined
   ) => Promise<any> | any
   onLatencyThreshold?: (
     env: TEnv,
@@ -101,7 +107,9 @@ export type Callbacks<TEnv = Env> = {
     latency: number,
     threshold: number,
     timeSlowStart: number,
-    timeNow: number
+    timeNow: number,
+    checkLocation: string,
+    group: string | undefined
   ) => Promise<any> | any
 }
 
