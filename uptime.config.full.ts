@@ -74,6 +74,9 @@ const workerConfig: WorkerConfig = {
       checkProxy: 'https://xxx.example.com OR worker://weur',
       // [OPTIONAL] if true, the check will fallback to local if the specified proxy is down
       checkProxyFallback: true,
+      // [OPTIONAL] latency threshold in milliseconds - if response time exceeds this, a "slow" notification is sent
+      // when response time drops back below threshold, a "fast" (recovered) notification is sent
+      latencyThreshold: 500,
     },
     // Example TCP Monitor
     {
@@ -150,6 +153,22 @@ const workerConfig: WorkerConfig = {
     ) => {
       // This callback will be called EVERY 1 MINTUE if there's an on-going incident for any monitor
       // Write any TypeScript code here
+    },
+    onLatencyThreshold: async (
+      env: any,
+      monitor: any,
+      isSlow: boolean,
+      latency: number,
+      threshold: number,
+      timeSlowStart: number,
+      timeNow: number
+    ) => {
+      // This callback will be called when latency crosses the threshold (either slow or recovered)
+      // isSlow: true when latency exceeds threshold, false when it recovers
+      // latency: current response time in ms
+      // threshold: the configured latencyThreshold value
+      // timeSlowStart: when the slow period started (same as timeNow if just became slow)
+      // timeNow: current timestamp
     },
   },
 }

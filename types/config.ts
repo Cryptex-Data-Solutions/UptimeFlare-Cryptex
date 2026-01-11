@@ -45,6 +45,10 @@ export type MonitorTarget = {
   responseForbiddenKeyword?: string
   checkProxy?: string
   checkProxyFallback?: boolean
+  // [OPTIONAL] latency threshold in milliseconds - if response time exceeds this (strictly greater than),
+  // a "slow" notification is sent. When response time drops back below threshold, a "fast" (recovered)
+  // notification is sent. A response time exactly equal to the threshold is NOT considered slow.
+  latencyThreshold?: number
 }
 
 export type WorkerConfig<TEnv = Env> = {
@@ -89,6 +93,15 @@ export type Callbacks<TEnv = Env> = {
     timeIncidentStart: number,
     timeNow: number,
     reason: string
+  ) => Promise<any> | any
+  onLatencyThreshold?: (
+    env: TEnv,
+    monitor: MonitorTarget,
+    isSlow: boolean,
+    latency: number,
+    threshold: number,
+    timeSlowStart: number,
+    timeNow: number
   ) => Promise<any> | any
 }
 
@@ -152,4 +165,8 @@ export type MonitorStateCompacted = {
       time: string // Hex encoded Uint32Array
     }
   >
+
+  // tracks which monitors are currently in "slow" state (latency exceeds threshold)
+  // used to trigger slow/fast notifications on threshold crossings
+  slowMonitors?: Record<string, number> // monitor id -> timestamp when it became slow (missing entry = not slow)
 }

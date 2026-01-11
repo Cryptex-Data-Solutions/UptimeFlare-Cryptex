@@ -54,6 +54,9 @@ const workerConfig: WorkerConfig = {
       // checkProxy: 'worker://weur',
       // [OPTIONAL] if true, the check will fallback to local if the specified proxy is down
       // checkProxyFallback: true,
+      // [OPTIONAL] latency threshold in milliseconds - if response time exceeds this, a "slow" notification is sent
+      // when response time drops back below threshold, a "fast" (recovered) notification is sent
+      // latencyThreshold: 500,
     },
     // Example TCP Monitor
     {
