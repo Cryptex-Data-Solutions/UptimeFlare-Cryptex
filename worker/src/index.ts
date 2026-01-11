@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { MonitorTarget } from '../../types/config'
 import { workerConfig } from '../../uptime.config'
 import { getStatus, getStatusWithGlobalPing } from './monitor'
-import { formatAndNotify, getWorkerLocation } from './util'
+import { formatAndNotify, formatAndNotifyLatency, getWorkerLocation } from './util'
 import { CompactedMonitorStateWrapper, getFromStore, setToStore } from './store'
 
 export interface Env {
@@ -137,6 +137,11 @@ const Worker = {
         }
       } else {
         // Current status is down
+        // Clear slow state if service goes down (slow is only relevant when service is up)
+        if (state.data.slowMonitors?.[monitor.id]) {
+          delete state.data.slowMonitors[monitor.id]
+        }
+
         // open new incident if not already open
         if (lastIncident.end !== null) {
           state.appendIncident(monitor.id, {
@@ -228,6 +233,85 @@ const Worker = {
         } catch (e) {
           console.log('Error calling callback: ')
           console.log(e)
+        }
+      }
+
+      // Check latency threshold (only when service is up)
+      if (status.up && monitor.latencyThreshold !== undefined) {
+        // Initialize slowMonitors if not present
+        if (!state.data.slowMonitors) {
+          state.data.slowMonitors = {}
+        }
+
+        const wasSlowAt = state.data.slowMonitors[monitor.id]
+        const isSlow = status.ping > monitor.latencyThreshold
+
+        if (isSlow && !wasSlowAt) {
+          // Transition from fast to slow
+          state.data.slowMonitors[monitor.id] = currentTimeSecond
+          statusChanged = true
+
+          console.log(
+            `[${monitor.name}] Latency ${status.ping}ms exceeds threshold ${monitor.latencyThreshold}ms, sending slow notification`
+          )
+
+          try {
+            await formatAndNotifyLatency(
+              monitor,
+              true,
+              status.ping,
+              monitor.latencyThreshold,
+              currentTimeSecond,
+              currentTimeSecond
+            )
+
+            console.log('Calling config onLatencyThreshold callback...')
+            await workerConfig.callbacks?.onLatencyThreshold?.(
+              env,
+              monitor,
+              true,
+              status.ping,
+              monitor.latencyThreshold,
+              currentTimeSecond,
+              currentTimeSecond
+            )
+          } catch (e) {
+            console.log('Error calling latency threshold callback: ')
+            console.log(e)
+          }
+        } else if (!isSlow && wasSlowAt) {
+          // Transition from slow to fast
+          delete state.data.slowMonitors[monitor.id]
+          statusChanged = true
+
+          console.log(
+            `[${monitor.name}] Latency ${status.ping}ms is back below threshold ${monitor.latencyThreshold}ms, sending fast notification`
+          )
+
+          try {
+            await formatAndNotifyLatency(
+              monitor,
+              false,
+              status.ping,
+              monitor.latencyThreshold,
+              wasSlowAt,
+              currentTimeSecond
+            )
+
+            console.log('Calling config onLatencyThreshold callback...')
+            await workerConfig.callbacks?.onLatencyThreshold?.(
+              env,
+              monitor,
+              false,
+              status.ping,
+              monitor.latencyThreshold,
+              wasSlowAt,
+              currentTimeSecond
+            )
+          } catch (e) {
+            console.log('Error calling latency threshold callback: ')
+            console.log(e)
+          }
         }
       }
 
