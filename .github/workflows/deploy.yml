@@ -5,6 +5,11 @@ on:
     branches: ['main']
   workflow_dispatch:
 
+# Configure your project name and custom domain here
+env:
+  PROJECT_NAME: uptimeflare  # Base name for all resources (D1: {name}_d1, Worker: {name}_worker, Pages: {name})
+  CUSTOM_DOMAIN: ""          # Optional: Custom domain for Pages (e.g., "status.example.com"). Leave empty to skip.
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -64,6 +69,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
 
       - name: Migrate state from KV (if needed)
         run: |
@@ -72,38 +78,51 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
           D1_ID: ${{ env.D1_ID }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
 
       - name: Deploy using Terraform
         # As we don't save terraform state somewhere, we need to import the existing resources
         run: |
           terraform init
 
+          WORKER_NAME="${PROJECT_NAME}_worker"
+
           DO_RESP=$(curl "https://api.cloudflare.com/client/v4/accounts/$TF_VAR_CLOUDFLARE_ACCOUNT_ID/workers/durable_objects/namespaces?per_page=1000" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
 
-          if echo "$DO_RESP" | jq -e '.result[] | select(.script == "uptimeflare_worker" and .class == "RemoteChecker")' > /dev/null; then
-            echo "Existing Durable Object namespace found for uptimeflare_worker RemoteChecker. No migration needed."
+          if echo "$DO_RESP" | jq -e --arg worker "$WORKER_NAME" '.result[] | select(.script == $worker and .class == "RemoteChecker")' > /dev/null; then
+            echo "Existing Durable Object namespace found for $WORKER_NAME RemoteChecker. No migration needed."
           else
-            echo "No existing Durable Object namespace found for uptimeflare_worker RemoteChecker. Need migration."
+            echo "No existing Durable Object namespace found for $WORKER_NAME RemoteChecker. Need migration."
             export TF_VAR_enable_do_migration=true
           fi
 
           echo "Try importing existing resources..."
           terraform import cloudflare_d1_database.uptimeflare_d1 "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$D1_ID"
-          terraform import cloudflare_workers_script.uptimeflare_worker "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare_worker" || echo "WARNING: Worker script import failed, continuing..."
-          terraform import cloudflare_workers_cron_trigger.uptimeflare_worker_cron "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare_worker" || echo "WARNING: Cron trigger import failed, continuing..."
-          terraform import cloudflare_pages_project.uptimeflare "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare" || echo "WARNING: Pages project import failed, continuing..."
+          terraform import cloudflare_workers_script.uptimeflare_worker "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$WORKER_NAME" || echo "WARNING: Worker script import failed, continuing..."
+          terraform import cloudflare_workers_cron_trigger.uptimeflare_worker_cron "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$WORKER_NAME" || echo "WARNING: Cron trigger import failed, continuing..."
+          terraform import cloudflare_pages_project.uptimeflare "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$PROJECT_NAME" || echo "WARNING: Pages project import failed, continuing..."
+
+          # Import custom domain if configured and exists
+          if [ -n "$CUSTOM_DOMAIN" ]; then
+            terraform import 'cloudflare_pages_domain.custom_domain[0]' "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$PROJECT_NAME/$CUSTOM_DOMAIN" || echo "WARNING: Pages domain import failed, continuing..."
+          fi
 
           terraform apply -auto-approve -input=false
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
+          TF_VAR_project_name: ${{ env.PROJECT_NAME }}
+          TF_VAR_custom_domain: ${{ env.CUSTOM_DOMAIN }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
+          CUSTOM_DOMAIN: ${{ env.CUSTOM_DOMAIN }}
           D1_ID: ${{ env.D1_ID }}
 
       # Currently Terraform Cloudflare provider doesn't support direct upload, use wrangler to upload instead.
       - name: Upload pages
         run: |
-          npx wrangler pages deploy .vercel/output/static --project-name uptimeflare
+          npx wrangler pages deploy .vercel/output/static --project-name "$PROJECT_NAME"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}

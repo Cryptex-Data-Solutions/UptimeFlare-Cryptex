@@ -10,7 +10,8 @@ headers = {
     "Authorization": f"Bearer {os.environ['CLOUDFLARE_API_TOKEN']}",
 }
 d1_id = os.environ['D1_ID']
-kv_name = "uptimeflare_kv"
+project_name = os.environ.get('PROJECT_NAME', 'uptimeflare')
+kv_name = f"{project_name}_kv"
 
 # Fetch KV namespace ID
 r = requests.get(
