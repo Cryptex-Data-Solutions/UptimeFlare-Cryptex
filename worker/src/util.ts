@@ -1,5 +1,15 @@
 import { MonitorTarget, WebhookConfig } from '../../types/config'
-import { maintenances, workerConfig } from '../../uptime.config'
+import { maintenances, pageConfig, workerConfig } from '../../uptime.config'
+
+function getMonitorGroup(monitorId: string): string | undefined {
+  const groups = pageConfig.group
+  if (!groups) return undefined
+
+  for (const [groupName, ids] of Object.entries(groups)) {
+    if (ids.includes(monitorId)) return groupName
+  }
+  return undefined
+}
 
 async function getWorkerLocation() {
   const res = await fetch('https://cloudflare.com/cdn-cgi/trace')
@@ -46,20 +56,22 @@ function formatStatusChangeNotification(
     timeZone: timeZone,
   })
 
+  const group = getMonitorGroup(monitor.id)
+  const groupPrefix = group ? `[${group}] ` : ''
   let downtimeDuration = Math.round((timeNow - timeIncidentStart) / 60)
   const timeNowFormatted = dateFormatter.format(new Date(timeNow * 1000))
   const timeIncidentStartFormatted = dateFormatter.format(new Date(timeIncidentStart * 1000))
 
   if (isUp) {
-    return `✅ ${monitor.name} is up! \nThe service is up again after being down for ${downtimeDuration} minutes.`
+    return `✅ ${groupPrefix}${monitor.name} is up! \nThe service is up again after being down for ${downtimeDuration} minutes.`
   } else if (timeNow == timeIncidentStart) {
-    return `🔴 ${
+    return `🔴 ${groupPrefix}${
       monitor.name
     } is currently down. \nService is unavailable at ${timeNowFormatted}. \nIssue: ${
       reason || 'unspecified'
     }`
   } else {
-    return `🔴 ${
+    return `🔴 ${groupPrefix}${
       monitor.name
     } is still down. \nService is unavailable since ${timeIncidentStartFormatted} (${downtimeDuration} minutes). \nIssue: ${
       reason || 'unspecified'
@@ -85,13 +97,15 @@ function formatLatencyThresholdNotification(
     timeZone: timeZone,
   })
 
+  const group = getMonitorGroup(monitor.id)
+  const groupPrefix = group ? `[${group}] ` : ''
   const timeNowFormatted = dateFormatter.format(new Date(timeNow * 1000))
 
   if (isSlow) {
-    return `🐢 ${monitor.name} is slow! \nResponse time ${latency}ms exceeds threshold of ${threshold}ms at ${timeNowFormatted}.`
+    return `🐢 ${groupPrefix}${monitor.name} is slow! \nResponse time ${latency}ms exceeds threshold of ${threshold}ms at ${timeNowFormatted}.`
   } else {
     const slowDuration = Math.round((timeNow - timeSlowStart) / 60)
-    return `⚡ ${monitor.name} is fast again! \nResponse time ${latency}ms is back below threshold of ${threshold}ms after being slow for ${slowDuration} minutes.`
+    return `⚡ ${groupPrefix}${monitor.name} is fast again! \nResponse time ${latency}ms is back below threshold of ${threshold}ms after being slow for ${slowDuration} minutes.`
   }
 }
 
@@ -262,6 +276,7 @@ const formatAndNotifyLatency = async (
 }
 
 export {
+  getMonitorGroup,
   getWorkerLocation,
   fetchTimeout,
   withTimeout,
