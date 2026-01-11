@@ -117,5 +117,5 @@ resource "cloudflare_pages_domain" "custom_domain" {
   count        = var.custom_domain != "" ? 1 : 0
   account_id   = var.CLOUDFLARE_ACCOUNT_ID
   project_name = cloudflare_pages_project.uptimeflare.name
-  domain       = var.custom_domain
+  name         = var.custom_domain
 }
