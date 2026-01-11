@@ -6,7 +6,8 @@ api_endpoint = f"https://api.cloudflare.com/client/v4/accounts/{os.environ['CLOU
 headers = {
     "Authorization": f"Bearer {os.environ['CLOUDFLARE_API_TOKEN']}",
 }
-d1_name = "uptimeflare_d1"
+project_name = os.environ.get('PROJECT_NAME', 'uptimeflare')
+d1_name = f"{project_name}_d1"
 with open('init.sql', 'r') as f:
     init_sql = f.read()
 

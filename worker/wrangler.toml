@@ -1,3 +1,8 @@
+# Local development configuration
+# NOTE: For production deployment, worker names are configured via:
+#   - GitHub Actions workflow: .github/workflows/deploy.yml (PROJECT_NAME env var)
+#   - Terraform variables: deploy.tf (project_name variable)
+#   - Production worker name: ${project_name}_worker
 name = "uptimeflare_worker"
 main = "src/index.ts"
 compatibility_date = "2025-04-02"
