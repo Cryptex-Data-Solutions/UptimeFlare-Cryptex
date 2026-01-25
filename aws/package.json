@@ -1,0 +1,22 @@
+{
+  "name": "uptimeflare-aws",
+  "version": "1.0.0",
+  "description": "AWS Lambda-based uptime monitoring with multi-region support",
+  "scripts": {
+    "build": "npm run build:checker && npm run build:aggregator && npm run build:api",
+    "build:checker": "cd lambdas/checker && npm install && npm run build && npm run package",
+    "build:aggregator": "cd lambdas/aggregator && npm install && npm run build && npm run package",
+    "build:api": "cd lambdas/api && npm install && npm run build && npm run package",
+    "config:validate": "ts-node uptime.config.aws.ts",
+    "config:export": "ts-node -e \"const c = require('./uptime.config.aws'); console.log(JSON.stringify(c.generateTerraformConfig(), null, 2))\"",
+    "deploy:plan": "cd terraform && terraform init && terraform plan",
+    "deploy:apply": "cd terraform && terraform apply -auto-approve",
+    "deploy:destroy": "cd terraform && terraform destroy",
+    "test": "echo \"No tests yet\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}
