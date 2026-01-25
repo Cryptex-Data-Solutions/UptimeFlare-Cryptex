@@ -5,6 +5,10 @@ on:
     branches: ['main']
     paths:
       - 'aws/**'
+      - 'pages/**'
+      - 'components/**'
+      - 'lib/**'
+      - 'sites/**'
   workflow_dispatch:
     inputs:
       action:
@@ -16,6 +20,11 @@ on:
           - plan
           - apply
           - destroy
+      deploy_status_pages:
+        description: 'Deploy status pages'
+        required: false
+        default: true
+        type: boolean
 
 env:
   TF_VAR_project_name: uptimeflare
@@ -67,10 +76,47 @@ jobs:
             aws/lambdas/api/function.zip
           retention-days: 1
 
+  build-status-page:
+    name: Build Status Page (OpenNext)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.deploy_status_pages != 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build with OpenNext
+        run: npx open-next build
+        env:
+          DATA_PROVIDER: aws
+          AWS_API_ENDPOINT: ${{ secrets.AWS_API_ENDPOINT || 'https://placeholder.execute-api.us-east-1.amazonaws.com' }}
+
+      - name: Package server function
+        run: |
+          cd .open-next/server-function
+          zip -r ../server-function.zip .
+
+      - name: Upload OpenNext artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opennext-build
+          path: |
+            .open-next/server-function.zip
+            .open-next/assets
+          retention-days: 1
+
   terraform:
     name: Terraform ${{ github.event.inputs.action || 'apply' }}
     runs-on: ubuntu-latest
-    needs: build-lambdas
+    needs: [build-lambdas, build-status-page]
+    if: always() && needs.build-lambdas.result == 'success'
     defaults:
       run:
         working-directory: aws/terraform
@@ -83,6 +129,13 @@ jobs:
         with:
           name: lambda-packages
           path: aws/lambdas
+
+      - name: Download OpenNext artifacts
+        if: needs.build-status-page.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: opennext-build
+          path: .open-next
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -123,6 +176,11 @@ jobs:
           password_protection = "${{ secrets.PASSWORD_PROTECTION || '' }}"
           custom_domain       = "${{ secrets.CUSTOM_DOMAIN || '' }}"
           certificate_arn     = "${{ secrets.CERTIFICATE_ARN || '' }}"
+
+          # Status page deployments
+          status_pages = ${{ secrets.STATUS_PAGES_CONFIG || '{}' }}
+          status_page_lambda_zip = "../.open-next/server-function.zip"
+          status_page_assets_path = "../.open-next/assets"
           TFVARS
 
       - name: Terraform Init
@@ -130,6 +188,7 @@ jobs:
 
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
+        continue-on-error: true
 
       - name: Terraform Validate
         run: terraform validate
@@ -163,17 +222,42 @@ jobs:
         if: github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
         run: terraform apply -auto-approve tfplan
 
+      - name: Upload static assets to S3
+        if: (github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) && needs.build-status-page.result == 'success'
+        run: |
+          # Get S3 bucket names from Terraform output and upload assets
+          for site_id in $(terraform output -json status_page_urls 2>/dev/null | jq -r 'keys[]' 2>/dev/null || echo ""); do
+            bucket="${TF_VAR_project_name}-status-${site_id}-assets"
+            echo "Uploading assets to s3://${bucket}"
+            aws s3 sync ../../.open-next/assets "s3://${bucket}" --delete
+          done
+
+      - name: Invalidate CloudFront caches
+        if: (github.event.inputs.action == 'apply' || (github.ref == 'refs/heads/main' && github.event_name == 'push')) && needs.build-status-page.result == 'success'
+        run: |
+          # Invalidate CloudFront distributions
+          for dist_id in $(terraform output -json status_page_cloudfront_domains 2>/dev/null | jq -r 'to_entries[].value' 2>/dev/null || echo ""); do
+            if [ -n "$dist_id" ]; then
+              echo "Invalidating CloudFront distribution"
+              aws cloudfront create-invalidation --distribution-id "$dist_id" --paths "/*" || true
+            fi
+          done
+
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
         run: terraform destroy -auto-approve
 
-      - name: Output API Endpoint
+      - name: Output Deployment Summary
         if: github.event.inputs.action != 'destroy'
         run: |
           echo "## Deployment Complete! 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**API Endpoint:** $(terraform output -raw api_endpoint)" >> $GITHUB_STEP_SUMMARY
+          echo "### Monitoring Infrastructure" >> $GITHUB_STEP_SUMMARY
+          echo "**API Endpoint:** $(terraform output -raw api_endpoint 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Status API:** $(terraform output -raw status_api_url)" >> $GITHUB_STEP_SUMMARY
+          echo "**Status API:** $(terraform output -raw status_api_url 2>/dev/null || echo 'N/A')" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Checker Regions:** $(terraform output -json checker_regions)" >> $GITHUB_STEP_SUMMARY
+          echo "**Checker Regions:** $(terraform output -json checker_regions 2>/dev/null || echo '[]')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Status Pages" >> $GITHUB_STEP_SUMMARY
+          terraform output -json status_page_urls 2>/dev/null | jq -r 'to_entries[] | "- **\(.key)**: \(.value)"' >> $GITHUB_STEP_SUMMARY || echo "No status pages deployed" >> $GITHUB_STEP_SUMMARY

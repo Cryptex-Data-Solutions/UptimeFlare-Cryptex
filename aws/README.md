@@ -195,6 +195,108 @@ Incident history grouped by month.
 ### GET /api/badge?id={monitorId}
 Shields.io compatible badge.
 
+## Multi-Tenant Status Pages
+
+Deploy multiple branded status pages from a single monitoring infrastructure. Each status page can have:
+- Its own custom domain (e.g., `status.service1.com`, `status.service2.com`)
+- Filtered set of monitors to display
+- Custom branding (title, logo, links)
+- Custom grouping of monitors
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Shared Monitoring Backend                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │  Checkers   │  │ Aggregator  │  │  DynamoDB   │              │
+│  │ (regional)  │  │             │  │ (all data)  │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+│                          │                                       │
+│                    ┌─────┴─────┐                                │
+│                    │  API GW   │  ← Single API serves all data  │
+│                    │ /api/*    │    with optional filtering     │
+│                    └─────┬─────┘                                │
+└──────────────────────────┼──────────────────────────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+│ status.svc1   │  │ status.svc2   │  │ status.agg    │
+│  CloudFront   │  │  CloudFront   │  │  CloudFront   │
+│  + Lambda SSR │  │  + Lambda SSR │  │  + Lambda SSR │
+│               │  │               │  │               │
+│ Shows only:   │  │ Shows only:   │  │ Shows all     │
+│ - svc1_api    │  │ - svc2_api    │  │ monitors      │
+│ - svc1_db     │  │ - svc2_web    │  │               │
+└───────────────┘  └───────────────┘  └───────────────┘
+```
+
+### Site Configuration
+
+Create site configs in `sites/` directory:
+
+```typescript
+// sites/service1.ts
+const config: SiteConfig = {
+  id: 'service1',
+  title: 'Service 1 Status',
+  domain: 'status.service1.com',
+
+  // Only show these monitors
+  monitors: ['svc1_api', 'svc1_database', 'svc1_worker'],
+
+  // Custom grouping
+  groups: {
+    'Core Services': ['svc1_api', 'svc1_database'],
+    'Background Jobs': ['svc1_worker'],
+  },
+
+  // Custom branding
+  links: [
+    { link: 'https://service1.com', label: 'Website' },
+    { link: 'mailto:support@service1.com', label: 'Support', highlight: true },
+  ],
+}
+```
+
+### Terraform Configuration
+
+Deploy multiple status pages:
+
+```hcl
+status_pages = {
+  service1 = {
+    custom_domain   = "status.service1.com"
+    certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/xxx"
+  }
+  service2 = {
+    custom_domain   = "status.service2.com"
+    certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/yyy"
+  }
+  aggregated = {
+    custom_domain   = "status.company.com"
+    certificate_arn = "arn:aws:acm:us-east-1:123456789:certificate/zzz"
+  }
+}
+```
+
+### Domain Setup
+
+1. **Create ACM certificates** in `us-east-1` (required for CloudFront)
+2. **Add CNAME records** pointing to CloudFront distribution domains
+3. **Configure `STATUS_PAGES_CONFIG`** secret in GitHub Actions
+
+### Additional Cost per Status Page
+
+| Resource | Monthly Cost |
+|----------|-------------|
+| CloudFront distribution | ~$0.50 |
+| Lambda SSR | ~$1-3 |
+| S3 static assets | ~$0.10 |
+| **Per-site total** | **~$2-4/mo** |
+
 ## GitHub Actions Deployment
 
 ### Required Secrets
@@ -207,6 +309,7 @@ Shields.io compatible badge.
 - `PASSWORD_PROTECTION` - Basic auth (user:pass format, optional)
 - `CUSTOM_DOMAIN` - Custom domain for API (optional)
 - `CERTIFICATE_ARN` - ACM certificate ARN (required if custom domain set)
+- `STATUS_PAGES_CONFIG` - JSON map of status page sites (see Multi-Tenant section)
 
 ### Manual Deployment
 ```bash
